@@ -30,7 +30,7 @@ public class Request {
    * Method to parse a raw message line into a Request object.
    *
    * Uses Protocol's helper methods to extract the type and payload
-   * this allows the message format to be defind in one place only.
+   * this allows the message format to be defined in one place only.
    */
   public static Request parse(String rawMessage, String sender) {
     String type    = Protocol.getType(rawMessage);
@@ -53,7 +53,7 @@ public class Request {
     return Protocol.QUIT.equals(type);
 }
   /**
-   * Returns true if this message is the intitial JOIN.
+   * Returns true if this message is the initial JOIN.
    *
    */
   public boolean isJoin() {
