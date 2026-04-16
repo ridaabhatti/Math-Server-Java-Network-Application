@@ -1,65 +1,38 @@
 import java.io.*;
 import java.net.*;
-import java.util.*;
+import java.util.Scanner;
 
 /**
  * Client.java
- * A Math Server client that:
- *   1. Connects to the server and sends a JOIN with its name.
+ * An interactive Math Server client that:
+ *   1. Connects to the server and sends a JOIN with the client's name.
  *   2. Waits for the server's ACK confirming a successful connection.
- *   3. Automatically sends at least 3 math expressions at random intervals.
- *   4. Sends a QUIT message to gracefully close the connection.
+ *   3. Prompts the user to type math expressions one at a time.
+ *      Each expression is sent as a REQUEST and the server's result is printed.
+ *   4. When the user types "quit", sends a QUIT message and terminates cleanly.
  *
  * Usage:
- *   java Client <name> [host] [port]
+ *   java Client <n> [host] [port]
  *
- *   name  – the display name sent to the server (required)
- *   host  – server hostname or IP (default: 127.0.0.1)
- *   port  – server port           (default: 6789)
+ *   name  – display name sent to the server (required)
+ *   host  – server hostname or IP        (default: 127.0.0.1)
+ *   port  – server port                  (default: 6789)
  *
- * Example:
+ * Examples:
  *   java Client Alice
  *   java Client Bob 192.168.1.10 6789
+ *
+ * Supported expression operators: +  -  *  /  %  ^  and ( )
+ * Type "quit" (case-insensitive) to disconnect.
  */
 public class Client {
 
     // -------------------------------------------------------------------------
-    // Configuration
+    // Defaults
     // -------------------------------------------------------------------------
 
     private static final String DEFAULT_HOST = "127.0.0.1";
     private static final int    DEFAULT_PORT = 6789;
-
-    /**
-     * Pool of math expressions the client will choose from randomly.
-     * Covers all supported operators: +  -  *  /  %  ^  and parentheses.
-     */
-    private static final String[] EXPRESSION_POOL = {
-        "3 + 4",
-        "10 - 3 * 2",
-        "100 / 4",
-        "17 % 5",
-        "2 ^ 8",
-        "(1 + 2) * (3 + 4)",
-        "2 ^ 3 ^ 2",
-        "-5 + 20",
-        "3.5 * 2",
-        "(10 % 3) ^ 2",
-        "50 / (2 + 3)",
-        "7 * 7 - 1",
-        "((4 + 6) * 2) / 4",
-        "9 ^ 0.5",
-        "100 % 7 + 2 ^ 3"
-    };
-
-    /** Minimum delay between automatic requests (milliseconds). */
-    private static final int MIN_DELAY_MS = 1000;
-
-    /** Maximum delay between automatic requests (milliseconds). */
-    private static final int MAX_DELAY_MS = 3000;
-
-    /** How many math requests to send before disconnecting. */
-    private static final int NUM_REQUESTS = 5;
 
     // -------------------------------------------------------------------------
     // Main
@@ -69,12 +42,14 @@ public class Client {
 
         // --- Parse command-line arguments ------------------------------------
         if (args.length < 1) {
-            System.err.println("Usage: java Client <name> [host] [port]");
+            System.err.println("Usage: java Client <n> [host] [port]");
             System.exit(1);
         }
+
         String clientName = args[0];
         String host       = (args.length > 1) ? args[1] : DEFAULT_HOST;
         int    port       = DEFAULT_PORT;
+
         if (args.length > 2) {
             try {
                 port = Integer.parseInt(args[2]);
@@ -86,10 +61,12 @@ public class Client {
 
         // --- Connect and run -------------------------------------------------
         System.out.println("Client [" + clientName + "] starting...");
-        System.out.println("Connecting to " + host + ":" + port);
+        System.out.println("Connecting to " + host + ":" + port + "\n");
 
-        try (Socket socket = new Socket(host, port)) {
+        try (Socket socket  = new Socket(host, port);
+             Scanner stdin  = new Scanner(System.in)) {
 
+            // Set up text I/O over the socket
             BufferedReader in  = new BufferedReader(
                                      new InputStreamReader(socket.getInputStream()));
             PrintWriter    out = new PrintWriter(
@@ -100,7 +77,7 @@ public class Client {
             out.println(joinMsg);
             System.out.println("[SENT]     " + joinMsg);
 
-            // Step 2: Wait for ACK
+            // Step 2: Wait for ACK from the server
             String ackMsg = in.readLine();
             if (ackMsg == null) {
                 System.err.println("Server closed the connection before sending ACK.");
@@ -108,48 +85,53 @@ public class Client {
             }
             System.out.println("[RECEIVED] " + ackMsg);
 
-            String ackType = Protocol.getType(ackMsg);
-            if (!Protocol.ACK.equals(ackType)) {
+            // Verify the server accepted the JOIN
+            if (!Protocol.ACK.equals(Protocol.getType(ackMsg))) {
                 System.err.println("Expected ACK but got: " + ackMsg);
                 return;
             }
-            System.out.println("Successfully connected to the Math Server!\n");
 
-            // Step 3: Send math requests at random intervals
-            Random rng = new Random();
+            System.out.println("\nSuccessfully connected! Type a math expression and press Enter.");
+            System.out.println("Supported operators: +  -  *  /  %  ^  and ( )");
+            System.out.println("Type \"quit\" to disconnect.\n");
 
-            for (int i = 1; i <= NUM_REQUESTS; i++) {
-                // Pick a random expression from the pool
-                String expression = EXPRESSION_POOL[rng.nextInt(EXPRESSION_POOL.length)];
-                String requestMsg = Protocol.requestMessage(expression);
+            // Step 3: Interactive request loop
+            while (true) {
+                System.out.print("[" + clientName + "] > ");
 
-                out.println(requestMsg);
-                System.out.println("[SENT]     (" + i + "/" + NUM_REQUESTS + ") " + requestMsg);
-
-                // Read the server's RESPONSE or ERROR
-                String serverReply = in.readLine();
-                if (serverReply == null) {
-                    System.err.println("Server closed connection unexpectedly.");
+                // Read one line of user input
+                if (!stdin.hasNextLine()) {
+                    // EOF (e.g. Ctrl+D on Unix / Ctrl+Z on Windows) — treat as quit
                     break;
                 }
-                System.out.println("[RECEIVED] " + serverReply);
+                String input = stdin.nextLine().trim();
 
-                // Wait a random amount of time before the next request
-                // (skip the delay after the last request)
-                if (i < NUM_REQUESTS) {
-                    int delay = MIN_DELAY_MS + rng.nextInt(MAX_DELAY_MS - MIN_DELAY_MS + 1);
-                    System.out.println("           (waiting " + delay + " ms)\n");
-                    Thread.sleep(delay);
+                // Ignore blank lines
+                if (input.isEmpty()) continue;
+
+                // "quit" (any capitalisation) → send QUIT and exit the loop
+                if (input.equalsIgnoreCase("quit")) break;
+
+                // Send the expression as a REQUEST
+                String requestMsg = Protocol.requestMessage(input);
+                out.println(requestMsg);
+                System.out.println("[SENT]     " + requestMsg);
+
+                // Read and display the server's RESPONSE or ERROR
+                String serverReply = in.readLine();
+                if (serverReply == null) {
+                    System.err.println("Server closed the connection unexpectedly.");
+                    break;
                 }
+                System.out.println("[RECEIVED] " + serverReply + "\n");
             }
 
-            // Step 4: Send QUIT
+            // Step 4: Send QUIT and read farewell ACK
             System.out.println();
             String quitMsg = Protocol.quitMessage(clientName);
             out.println(quitMsg);
             System.out.println("[SENT]     " + quitMsg);
 
-            // Read the server's farewell ACK
             String farewell = in.readLine();
             if (farewell != null) {
                 System.out.println("[RECEIVED] " + farewell);
@@ -162,10 +144,6 @@ public class Client {
                                ". Is the server running?");
         } catch (IOException e) {
             System.err.println("I/O error: " + e.getMessage());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            System.err.println("Client interrupted.");
         }
     }
 }
-
