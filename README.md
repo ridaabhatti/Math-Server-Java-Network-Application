@@ -1,4 +1,4 @@
-# math-server-java
+# Math-Server-Java
  
 A multi-client math server built in Java using TCP sockets. The server accepts connections from multiple clients simultaneously, evaluates math expressions sent by clients, and returns the results. Built for CE/CS 4390 Computer Networks, Spring 2026.
  
